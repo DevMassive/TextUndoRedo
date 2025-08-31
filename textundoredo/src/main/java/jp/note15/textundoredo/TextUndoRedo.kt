@@ -37,9 +37,11 @@ class TextUndoRedo(private val textView: TextView) {
     }
 
     val canUndo: Boolean
-        get() = editHistory.position > 0
+        get() = editHistory.position > 0 && !changeListener.isImeComposing
 
     fun undo() {
+        if (changeListener.isImeComposing) return
+
         val edit = editHistory.previous ?: return
 
         val text = textView.editableText
@@ -57,9 +59,10 @@ class TextUndoRedo(private val textView: TextView) {
     }
 
     val canRedo: Boolean
-        get() = editHistory.position < editHistory.history.size
+        get() = editHistory.position < editHistory.history.size && !changeListener.isImeComposing
 
     fun redo() {
+        if (changeListener.isImeComposing) return
         val edit = editHistory.next ?: return
 
         val text = textView.editableText
@@ -155,7 +158,7 @@ class TextUndoRedo(private val textView: TextView) {
         private var lastActionType: ActionType? = ActionType.NOT_DEF
         private var lastActionTime: Long = 0
 
-        private var isImeComposing: Boolean = false
+        var isImeComposing: Boolean = false
         private var imeInitialBeforeText: CharSequence? = null
 
         override fun beforeTextChanged(s: CharSequence, start: Int, count: Int, after: Int) {
@@ -175,6 +178,7 @@ class TextUndoRedo(private val textView: TextView) {
             if (hasComposingSpan) {
                 if (!isImeComposing) {
                     isImeComposing = true
+                    stateChangeListener?.invoke()
                 }
             } else if (!isImeComposing) {
                 addEdit(start, beforeChange, s.subSequence(start, start + count))
@@ -193,6 +197,7 @@ class TextUndoRedo(private val textView: TextView) {
                     addEdit(prefix, before, after)
                 }
                 isImeComposing = false
+                stateChangeListener?.invoke()
                 imeInitialBeforeText = null
             }
         }

@@ -128,89 +128,36 @@ class TextUndoRedoTest {
         assertEquals(false, textUndoRedo.canUndo)
         assertEquals(false, textUndoRedo.canRedo)
 
-        // Simulate IME input: type "わたしは" which converts to "私は"
-        ic.setComposingText("わ",1)
+        ic.commitText("私は、", 3)
+        assertEquals("私は、", editText.text.toString())
         assertEquals(true, textUndoRedo.canUndo)
         assertEquals(false, textUndoRedo.canRedo)
 
-        ic.setComposingText("わた",2)
-        ic.setComposingText("わたし",3)
-        ic.setComposingText("わたしは",4)
-
-        // 変換中はUndo可能
-        assertEquals(true, textUndoRedo.canUndo)
-        assertEquals(false, textUndoRedo.canRedo)
-
-        // 「変換」ボタンによる変換
-        ic.commitText("私は", 2)
-        val length = editText.text.length
-
-        assertEquals(true, textUndoRedo.canUndo)
-        assertEquals(false, textUndoRedo.canRedo)
-
-        // Simulate IME input: type "あい" which converts to "アイ"
-        ic.setSelection(length, length)
-        ic.setComposingText("あ", length + 1)
-        ic.setComposingText("あい", length + 2)
-        // 「変換」ボタンによる変換
-        ic.setComposingText("アイ", length + 2)
-
-        assertEquals("私はアイ", editText.text.toString())
-        assertEquals(true, textUndoRedo.canUndo)
-        assertEquals(false, textUndoRedo.canRedo)
-
-        // 変換中にUndo
-        // 入力が確定したあとにUndoしたとみなされる
-        textUndoRedo.undo()
+        ic.setSelection(2, 3)
+        ic.commitText("", 2)
         assertEquals("私は", editText.text.toString())
-        assertEquals(true, textUndoRedo.canUndo)
-        assertEquals(true, textUndoRedo.canRedo)
-
-        // Redo
-        textUndoRedo.redo()
-        assertEquals("私はアイ", editText.text.toString())
         assertEquals(true, textUndoRedo.canUndo)
         assertEquals(false, textUndoRedo.canRedo)
 
         // Undo
         textUndoRedo.undo()
-        assertEquals("私は", editText.text.toString())
+        assertEquals("私は、", editText.text.toString())
         assertEquals(true, textUndoRedo.canUndo)
         assertEquals(true, textUndoRedo.canRedo)
 
-        ic.setSelection(length, length)
-        ic.setComposingText("、", length + 1)
+        // Simulate IME input: type "AI" which converts to "愛"
+        ic.setComposingText("あ", 4)
+        ic.setComposingText("あい", 5)
 
-        // 変換中にRedoはできない
-        assertEquals("私は、", editText.text.toString())
-        assertEquals(true, textUndoRedo.canUndo)
-        assertEquals(false, textUndoRedo.canRedo)
-
-        ic.commitText("、", length + 1)
-        assertEquals(true, textUndoRedo.canUndo)
-        assertEquals(false, textUndoRedo.canRedo)
-
-        val editable = editText.editableText
-        editable.append("あい")
         assertEquals("私は、あい", editText.text.toString())
-
-        textUndoRedo.undo()
-        assertEquals("私は、", editText.text.toString())
-        assertEquals(true, textUndoRedo.canUndo)
-        assertEquals(true, textUndoRedo.canRedo)
-
-        ic.setComposingRegion(length + 1, length + 3)
-
-        // composing regionがあるだけならRedoできる
-        assertEquals(true, textUndoRedo.canUndo)
-        assertEquals(true, textUndoRedo.canRedo)
-
-        ic.setComposingText("アイ", length + 3)
-
-        // composing textを変更したならRedoできない
-        assertEquals(true, textUndoRedo.canUndo)
+        assertEquals(false, textUndoRedo.canUndo)
         assertEquals(false, textUndoRedo.canRedo)
 
+        ic.commitText("AI", 5)
+
+        assertEquals("私は、AI", editText.text.toString())
+        assertEquals(true, textUndoRedo.canUndo)
+        assertEquals(false, textUndoRedo.canRedo)
     }
 
     @Test
