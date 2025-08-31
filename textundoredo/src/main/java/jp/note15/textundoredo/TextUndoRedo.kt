@@ -10,11 +10,7 @@ import android.widget.TextView
 import java.util.LinkedList
 
 class TextUndoRedo(private val textView: TextView) {
-    interface OnUndoRedoStateChangeListener {
-        fun onStateChanged()
-    }
-
-    var listener: OnUndoRedoStateChangeListener? = null
+    var stateChangeListener: (() -> Unit)? = null
 
     private var isUndoOrRedo = false
 
@@ -37,7 +33,7 @@ class TextUndoRedo(private val textView: TextView) {
 
     fun clearHistory() {
         editHistory.clear()
-        listener?.onStateChanged()
+        stateChangeListener?.invoke()
     }
 
     val canUndo: Boolean
@@ -57,7 +53,7 @@ class TextUndoRedo(private val textView: TextView) {
         removeComposingSpans()
 
         Selection.setSelection(text, start + (edit.before?.length ?: 0))
-        listener?.onStateChanged()
+        stateChangeListener?.invoke()
     }
 
     val canRedo: Boolean
@@ -77,7 +73,7 @@ class TextUndoRedo(private val textView: TextView) {
         removeComposingSpans()
 
         Selection.setSelection(text, start + (edit.after?.length ?: 0))
-        listener?.onStateChanged()
+        stateChangeListener?.invoke()
     }
 
     private fun removeComposingSpans() {
@@ -154,7 +150,7 @@ class TextUndoRedo(private val textView: TextView) {
         INSERT, DELETE, PASTE, NOT_DEF
     }
 
-        private inner class EditTextChangeListener : TextWatcher {
+    private inner class EditTextChangeListener : TextWatcher {
         private var beforeChange: CharSequence? = null
         private var lastActionType: ActionType? = ActionType.NOT_DEF
         private var lastActionTime: Long = 0
@@ -201,7 +197,10 @@ class TextUndoRedo(private val textView: TextView) {
             }
         }
 
-        private fun diff(initial: CharSequence?, final: CharSequence): Triple<Int, CharSequence, CharSequence> {
+        private fun diff(
+            initial: CharSequence?,
+            final: CharSequence
+        ): Triple<Int, CharSequence, CharSequence> {
             val s1 = initial ?: ""
             val s2 = final
             val commonPrefix = commonPrefixLength(s1, s2)
@@ -240,7 +239,8 @@ class TextUndoRedo(private val textView: TextView) {
 
             if (TextUtils.equals(before, after)) return
 
-            val batch = editItem != null && at == lastActionType && at != ActionType.PASTE && System.currentTimeMillis() - lastActionTime < BATCH_TIME_THRESHOLD_MS
+            val batch =
+                editItem != null && at == lastActionType && at != ActionType.PASTE && System.currentTimeMillis() - lastActionTime < BATCH_TIME_THRESHOLD_MS
 
             if (!batch) {
                 editHistory.add(EditItem(start, before, after))
@@ -252,7 +252,8 @@ class TextUndoRedo(private val textView: TextView) {
                     val relativeStart = start - editItem.start
                     val currentAfter = editItem.after?.toString() ?: ""
                     if (relativeStart >= 0 && relativeStart <= currentAfter.length) {
-                        editItem.after = StringBuilder(currentAfter).insert(relativeStart, after).toString()
+                        editItem.after =
+                            StringBuilder(currentAfter).insert(relativeStart, after).toString()
                     } else {
                         editItem.after = TextUtils.concat(currentAfter, after)
                     }
@@ -260,22 +261,11 @@ class TextUndoRedo(private val textView: TextView) {
             }
             lastActionType = at
             lastActionTime = System.currentTimeMillis()
-            listener?.onStateChanged()
+            stateChangeListener?.invoke()
         }
     }
 
     companion object {
         private const val BATCH_TIME_THRESHOLD_MS = 1000L
-        private object Logger {
-            // Set this to BuildConfig.DEBUG
-            private const val DEBUG = true
-            private val TAG: String = TextUndoRedo::class.java.simpleName
-
-            fun d(message: String) {
-                if (DEBUG) {
-                    android.util.Log.d(TAG, message)
-                }
-            }
-        }
     }
 }
