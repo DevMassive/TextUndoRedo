@@ -22,4 +22,5 @@ dependencyResolutionManagement {
 }
 
 include(":textundoredo")
+include(":sample")
 

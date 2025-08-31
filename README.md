@@ -92,12 +92,28 @@ dependencies {
 5.  **Manage History:**
     *   **Set Maximum History Size:**
         ```kotlin
+        ## Manage History:
+    *   **Set Maximum History Size:**
+        ```kotlin
         textUndoRedo.setMaxHistorySize(50) // Keep last 50 changes
         ```
     *   **Clear History:**
         ```kotlin
         textUndoRedo.clearHistory() // Clear all undo/redo history
         ```
+
+## Sample Application
+
+A sample application demonstrating the usage of `TextUndoRedo` is included in the `sample/` module.
+
+To run the sample application:
+
+1.  **Open the project in Android Studio.**
+2.  **Sync Gradle files.**
+3.  **Select the `sample` run configuration** from the dropdown menu in the toolbar.
+4.  **Run the application** on an emulator or a physical device.
+
+## Contributing
 
 
 
