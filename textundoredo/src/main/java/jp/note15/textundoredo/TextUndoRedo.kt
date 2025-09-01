@@ -6,7 +6,9 @@ import android.text.Spanned
 import android.text.Spanned.SPAN_COMPOSING
 import android.text.TextUtils
 import android.text.TextWatcher
+import android.util.Log
 import android.widget.TextView
+import jp.note15.textundoredo.BuildConfig
 import java.util.LinkedList
 
 class TextUndoRedo(private val textView: TextView) {
@@ -272,5 +274,11 @@ class TextUndoRedo(private val textView: TextView) {
 
     companion object {
         private const val BATCH_TIME_THRESHOLD_MS = 1000L
+        private const val TAG = "TextUndoRedo"
+        private fun d(tag: String, message: String) {
+            if (BuildConfig.DEBUG) {
+                Log.d(tag, message)
+            }
+        }
     }
 }
