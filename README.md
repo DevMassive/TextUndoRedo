@@ -92,9 +92,6 @@ dependencies {
 5.  **Manage History:**
     *   **Set Maximum History Size:**
         ```kotlin
-        ## Manage History:
-    *   **Set Maximum History Size:**
-        ```kotlin
         textUndoRedo.setMaxHistorySize(50) // Keep last 50 changes
         ```
     *   **Clear History:**
