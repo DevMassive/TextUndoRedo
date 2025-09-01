@@ -25,6 +25,10 @@ class MainActivity : AppCompatActivity() {
             textUndoRedo.redo()
         }
 
+        binding.clearHistoryButton.setOnClickListener {
+            textUndoRedo.clearHistory()
+        }
+
         textUndoRedo.stateChangeListener = {
             updateUndoRedoButtonStates()
         }
