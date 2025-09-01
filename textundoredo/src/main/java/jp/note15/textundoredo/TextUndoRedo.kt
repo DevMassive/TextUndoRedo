@@ -8,7 +8,6 @@ import android.text.TextUtils
 import android.text.TextWatcher
 import android.util.Log
 import android.widget.TextView
-import jp.note15.textundoredo.BuildConfig
 import java.util.LinkedList
 
 class TextUndoRedo(private val textView: TextView) {
@@ -42,42 +41,53 @@ class TextUndoRedo(private val textView: TextView) {
         get() = editHistory.position > 0 && !changeListener.isImeComposing
 
     fun undo() {
-        if (changeListener.isImeComposing) return
-
-        val edit = editHistory.previous ?: return
-
-        val text = textView.editableText
-        val start = edit.start
-        val end = start + (edit.after?.length ?: 0)
-
-        isUndoOrRedo = true
-        text.replace(start, end, edit.before)
-        isUndoOrRedo = false
-
-        removeComposingSpans()
-
-        Selection.setSelection(text, start + (edit.before?.length ?: 0))
-        stateChangeListener?.invoke()
+        d(TAG, "undo: canUndo=${canUndo}, isImeComposing=${changeListener.isImeComposing}")
+        if (!canUndo || changeListener.isImeComposing) return
+        applyOperation(true)
+        d(TAG, "undo: completed")
     }
 
     val canRedo: Boolean
         get() = editHistory.position < editHistory.history.size && !changeListener.isImeComposing
 
     fun redo() {
-        if (changeListener.isImeComposing) return
-        val edit = editHistory.next ?: return
+        d(TAG, "redo: canRedo=${canRedo}, isImeComposing=${changeListener.isImeComposing}")
+        if (!canRedo || changeListener.isImeComposing) return
+        applyOperation(false)
+        d(TAG, "redo: completed")
+    }
 
+    private fun applyOperation(isUndo: Boolean) {
+        val edit = (if (isUndo) editHistory.previous else editHistory.next) ?: return
         val text = textView.editableText
-        val start = edit.start
-        val end = start + (edit.before?.length ?: 0)
+        val changes = if (isUndo) edit.changes.reversed() else edit.changes
 
         isUndoOrRedo = true
-        text.replace(start, end, edit.after)
+        for (change in changes) {
+            if (isUndo) {
+                val end = change.start + change.newText.length
+                text.replace(change.start, end, change.oldText)
+            } else {
+                val end = change.start + change.oldText.length
+                text.replace(change.start, end, change.newText)
+            }
+        }
         isUndoOrRedo = false
 
         removeComposingSpans()
 
-        Selection.setSelection(text, start + (edit.after?.length ?: 0))
+        val selectionChange = if (isUndo) edit.changes.firstOrNull() else edit.changes.lastOrNull()
+        val selection = if (selectionChange != null) {
+            if (isUndo) {
+                selectionChange.start + selectionChange.oldText.length
+            } else {
+                selectionChange.start + selectionChange.newText.length
+            }
+        } else {
+            text.length
+        }
+        Selection.setSelection(text, selection)
+
         stateChangeListener?.invoke()
     }
 
@@ -94,9 +104,14 @@ class TextUndoRedo(private val textView: TextView) {
         fun clear() {
             position = 0
             history.clear()
+            d(TAG, "EditHistory: clear")
         }
 
         fun add(item: EditItem) {
+            d(
+                TAG,
+                "EditHistory: add item with ${item.changes.size} changes. Current position: $position, history size: ${history.size}"
+            )
             while (history.size > position) {
                 history.removeLast()
             }
@@ -106,6 +121,7 @@ class TextUndoRedo(private val textView: TextView) {
             if (maxHistorySize >= 0) {
                 trimHistory()
             }
+            d(TAG, "EditHistory: added. New position: $position, history size: ${history.size}")
         }
 
         fun updateMaxHistorySizeAndTrim(maxHistorySize: Int) {
@@ -113,6 +129,7 @@ class TextUndoRedo(private val textView: TextView) {
             if (this.maxHistorySize >= 0) {
                 trimHistory()
             }
+            d(TAG, "EditHistory: updateMaxHistorySizeAndTrim: $maxHistorySize")
         }
 
         private fun trimHistory() {
@@ -124,6 +141,10 @@ class TextUndoRedo(private val textView: TextView) {
             if (position < 0) {
                 position = 0
             }
+            d(
+                TAG,
+                "EditHistory: trimHistory. New position: $position, history size: ${history.size}"
+            )
         }
 
         val current: EditItem?
@@ -131,24 +152,39 @@ class TextUndoRedo(private val textView: TextView) {
 
         val previous: EditItem?
             get() {
-                if (position == 0) return null
+                if (position == 0) {
+                    d(TAG, "EditHistory: previous - no previous item (position is 0)")
+                    return null
+                }
                 position--
-                return history.getOrNull(position)
+                val item = history.getOrNull(position)
+                d(TAG, "EditHistory: previous - new position: $position, item: ${item != null}")
+                return item
             }
 
         val next: EditItem?
             get() {
-                if (position >= history.size) return null
+                if (position >= history.size) {
+                    d(TAG, "EditHistory: next - no next item (position >= history size)")
+                    return null
+                }
                 val item = history.getOrNull(position)
                 if (item != null) {
                     position++
                 }
+                d(TAG, "EditHistory: next - new position: $position, item: ${item != null}")
                 return item
             }
     }
 
+    // New DiffOperation data class
+    private data class DiffOperation(
+        val start: Int, val oldText: CharSequence, val newText: CharSequence
+    )
+
+    // Modified EditItem to hold a list of DiffOperation
     private data class EditItem(
-        var start: Int, var before: CharSequence?, var after: CharSequence?
+        val changes: List<DiffOperation>
     )
 
     internal enum class ActionType {
@@ -162,8 +198,14 @@ class TextUndoRedo(private val textView: TextView) {
 
         var isImeComposing: Boolean = false
         private var imeInitialBeforeText: CharSequence? = null
+        private val imeCompositionChanges: MutableList<DiffOperation> =
+            mutableListOf() // To store changes during IME composition
 
         override fun beforeTextChanged(s: CharSequence, start: Int, count: Int, after: Int) {
+            d(
+                TAG,
+                "beforeTextChanged: s='${s}', start=${start}, count=${count}, after=${after}, isUndoOrRedo=${isUndoOrRedo}, isImeComposing=${isImeComposing}"
+            )
             if (isUndoOrRedo) return
             beforeChange = s.subSequence(start, start + count)
             if (!isImeComposing) {
@@ -172,99 +214,103 @@ class TextUndoRedo(private val textView: TextView) {
         }
 
         override fun onTextChanged(s: CharSequence, start: Int, before: Int, count: Int) {
+            d(
+                TAG,
+                "onTextChanged: s='${s}', start=${start}, before=${before}, count=${count}, isUndoOrRedo=${isUndoOrRedo}, isImeComposing=${isImeComposing}"
+            )
             if (isUndoOrRedo) return
 
-            val hasComposingSpan = s is Spanned && s.getSpans(0, s.length, Any::class.java)
-                .any { s.getSpanFlags(it) and SPAN_COMPOSING != 0 }
+            val hasComposingSpan = hasComposingSpan(s)
 
-            if (hasComposingSpan) {
-                if (!isImeComposing) {
-                    isImeComposing = true
-                    stateChangeListener?.invoke()
-                }
-            } else if (!isImeComposing) {
-                addEdit(start, beforeChange, s.subSequence(start, start + count))
+            val newText = s.subSequence(start, start + count)
+            val oldText = beforeChange // This is the text that was replaced
+
+            if (hasComposingSpan && !isImeComposing && before < count) { // Start new IME composition
+                isImeComposing = true
+                stateChangeListener?.invoke()
+                imeCompositionChanges.clear() // Clear previous changes for a new composition
+                d(TAG, "onTextChanged: IME composition started.")
+            }
+
+            if (isImeComposing) { // Always add to IME changes if composing
+                imeCompositionChanges.add(DiffOperation(start, oldText ?: "", newText))
+                d(
+                    TAG,
+                    "onTextChanged: Added IME composition change: start=$start, oldText='${oldText}', newText='${newText}'"
+                )
+            } else { // Normal typing
+                addEdit(start, oldText, newText)
+                d(TAG, "onTextChanged: Normal typing, added single edit.")
             }
         }
 
         override fun afterTextChanged(s: Editable?) {
+            d(
+                TAG,
+                "afterTextChanged: s='${s}', isUndoOrRedo=${isUndoOrRedo}, isImeComposing=${isImeComposing}"
+            )
             if (isUndoOrRedo || s == null) return
 
-            val hasComposingSpan = s.getSpans(0, s.length, Any::class.java)
-                .any { s.getSpanFlags(it) and SPAN_COMPOSING != 0 }
+            val hasComposingSpan = hasComposingSpan(s)
 
             if (isImeComposing && !hasComposingSpan) {
-                val (prefix, before, after) = diff(imeInitialBeforeText, s)
-                if (before.isNotEmpty() || after.isNotEmpty()) {
-                    addEdit(prefix, before, after)
+                // IME composition ended
+                d(
+                    TAG,
+                    "afterTextChanged: IME composition ended. Adding ${imeCompositionChanges.size} changes to history."
+                )
+                if (imeCompositionChanges.isNotEmpty()) {
+                    editHistory.add(EditItem(imeCompositionChanges.toList()))
+                    imeCompositionChanges.clear() // Clear after adding to history
                 }
                 isImeComposing = false
                 stateChangeListener?.invoke()
-                imeInitialBeforeText = null
+                imeInitialBeforeText = null // No longer needed with diff items
             }
         }
 
-        private fun diff(
-            initial: CharSequence?,
-            final: CharSequence
-        ): Triple<Int, CharSequence, CharSequence> {
-            val s1 = initial ?: ""
-            val s2 = final
-            val commonPrefix = commonPrefixLength(s1, s2)
-            val commonSuffix = commonSuffixLength(s1, s2, commonPrefix)
-            val before = s1.subSequence(commonPrefix, s1.length - commonSuffix)
-            val after = s2.subSequence(commonPrefix, s2.length - commonSuffix)
-            return Triple(commonPrefix, before, after)
+        private fun hasComposingSpan(s: CharSequence): Boolean {
+            return s is Spanned && s.getSpans(0, s.length, Any::class.java)
+                .any { s.getSpanFlags(it) and SPAN_COMPOSING != 0 }
         }
 
-        private fun commonPrefixLength(s1: CharSequence, s2: CharSequence): Int {
-            var i = 0
-            while (i < s1.length && i < s2.length && s1[i] == s2[i]) {
-                i++
+        private fun getActionType(oldText: CharSequence?, newText: CharSequence?): ActionType {
+            val oldLen = oldText?.length ?: 0
+            val newLen = newText?.length ?: 0
+
+            if (oldLen > newLen) return ActionType.DELETE
+            if (newLen > oldLen) {
+                return if (oldLen == 0) ActionType.INSERT else ActionType.PASTE
             }
-            return i
-        }
-
-        private fun commonSuffixLength(s1: CharSequence, s2: CharSequence, prefix: Int): Int {
-            var i = 0
-            while (i < s1.length - prefix && i < s2.length - prefix && s1[s1.length - 1 - i] == s2[s2.length - 1 - i]) {
-                i++
-            }
-            return i
-        }
-
-        private fun getActionType(before: CharSequence?, after: CharSequence?): ActionType {
-            if (!TextUtils.isEmpty(before) && TextUtils.isEmpty(after)) return ActionType.DELETE
-            if (TextUtils.isEmpty(before) && !TextUtils.isEmpty(after)) return ActionType.INSERT
-            if (!TextUtils.isEmpty(before) && !TextUtils.isEmpty(after)) return ActionType.PASTE
             return ActionType.NOT_DEF
         }
 
-        private fun addEdit(start: Int, before: CharSequence?, after: CharSequence?) {
-            val at = getActionType(before, after)
-            val editItem = editHistory.current
+        private fun addEdit(start: Int, oldText: CharSequence?, newText: CharSequence?) {
+            d(TAG, "addEdit: start=$start, oldText='${oldText}', newText='${newText}'")
+            val at = getActionType(oldText, newText)
 
-            if (TextUtils.equals(before, after)) return
+            if (TextUtils.equals(oldText, newText)) {
+                d(TAG, "addEdit: oldText equals newText, returning.")
+                return
+            }
 
-            val batch =
-                editItem != null && at == lastActionType && at != ActionType.PASTE && System.currentTimeMillis() - lastActionTime < BATCH_TIME_THRESHOLD_MS
+            val newDiffOperation = DiffOperation(start, oldText ?: "", newText ?: "")
+
+            // Batching logic for normal typing
+            val currentEditItem = editHistory.current
+            val batch = currentEditItem != null && getActionType(
+                currentEditItem.changes.first().oldText, currentEditItem.changes.first().newText
+            ) == at && at != ActionType.PASTE && // PASTE is typically a single, distinct action
+                    System.currentTimeMillis() - lastActionTime < BATCH_TIME_THRESHOLD_MS
 
             if (!batch) {
-                editHistory.add(EditItem(start, before, after))
+                d(TAG, "addEdit: Not batching, adding new EditItem.")
+                editHistory.add(EditItem(listOf(newDiffOperation)))
             } else {
-                if (at == ActionType.DELETE) {
-                    editItem.start = start
-                    editItem.before = TextUtils.concat(before, editItem.before)
-                } else { // INSERT
-                    val relativeStart = start - editItem.start
-                    val currentAfter = editItem.after?.toString() ?: ""
-                    if (relativeStart >= 0 && relativeStart <= currentAfter.length) {
-                        editItem.after =
-                            StringBuilder(currentAfter).insert(relativeStart, after).toString()
-                    } else {
-                        editItem.after = TextUtils.concat(currentAfter, after)
-                    }
-                }
+                d(TAG, "addEdit: Batching with previous EditItem.")
+                val newChanges = currentEditItem!!.changes.toMutableList()
+                newChanges.add(newDiffOperation)
+                editHistory.history[editHistory.position - 1] = EditItem(newChanges)
             }
             lastActionType = at
             lastActionTime = System.currentTimeMillis()
